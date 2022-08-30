@@ -22,7 +22,7 @@ contract WKDLPPool is Ownable, ReentrancyGuard {
     /// `amount` LP token amount the user has provided.
     /// `rewardDebt` Used to calculate the correct amount of rewards. See explanation below.
     ///
-    /// We do some fancy math here. Basically, any point in time, the amount of CAKEs
+    /// We do some fancy math here. Basically, any point in time, the amount of Wkds
     /// entitled to a user but is pending to be distributed is:
     ///
     ///   pending reward = (user share * pool.accWkdPerShare) - user.rewardDebt
@@ -42,12 +42,12 @@ contract WKDLPPool is Ownable, ReentrancyGuard {
     /// `allocPoint` The amount of allocation points assigned to the pool.
     ///     Also known as the amount of "multipliers". Combined with `totalXAllocPoint`, it defines the % of
     ///     WKD rewards each pool gets.
-    /// `accWkdPerShare` Accumulated CAKEs per share, times 1e12.
+    /// `accWkdPerShare` Accumulated Wkds per share, times 1e12.
     /// `lastRewardBlock` Last block number that pool update action is executed.
     /// `isRegular` The flag to set pool is regular or special. See below:
     ///     In MasterChef V2 farms are "regular pools". "special pools", which use a different sets of
     ///     `allocPoint` and their own `totalSpecialAllocPoint` are designed to handle the distribution of
-    ///     the WKD rewards to all the PancakeSwap products.
+    ///     the WKD rewards to all the PanWkdSwap products.
     /// `totalBoostedShare` The total amount of user shares in each pool. After considering the share boosts.
     struct PoolInfo {
         uint256 accWkdPerShare;
@@ -86,7 +86,7 @@ contract WKDLPPool is Ownable, ReentrancyGuard {
     uint256 public constant BOOST_PRECISION = 100 * 1e10;
     /// @notice Hard limit for maxmium boost factor, it must be greater than BOOST_PRECISION
     uint256 public constant MAX_BOOST_PRECISION = 200 * 1e10;
-    /// @notice total cake rate =  toRegular + toSpecial
+    /// @notice total Wkd rate =  toRegular + toSpecial
     uint256 public constant WKD_RATE_TOTAL_PRECISION = 1e12;
 
     uint256 public WKD_PER_BLOCK = 237779 * 1e9;
@@ -158,7 +158,7 @@ contract WKDLPPool is Ownable, ReentrancyGuard {
     /// @param _lpToken Address of the LP BEP-20 token.
     /// @param _isRegular Whether the pool is regular or special. LP farms are always "regular". "Special" pools are
     /// @param _withUpdate Whether call "massUpdatePools" operation.
-    /// only for WKD distributions within PancakeSwap products.
+    /// only for WKD distributions within PanWkdSwap products.
     function add(
         uint256 _allocPoint,
         IBEP20 _lpToken,
@@ -263,7 +263,7 @@ contract WKDLPPool is Ownable, ReentrancyGuard {
             );
     }
 
-    /// @notice Update cake reward for all the active pools. Be careful of gas spending!
+    /// @notice Update Wkd reward for all the active pools. Be careful of gas spending!
     function massUpdatePools() public {
         uint256 length = poolInfo.length;
         for (uint256 pid = 0; pid < length; ++pid) {
@@ -533,10 +533,10 @@ contract WKDLPPool is Ownable, ReentrancyGuard {
         uint256 boostedAmount = user.amount.mul(_boostMultiplier).div(
             BOOST_PRECISION
         );
-        uint256 accCake = boostedAmount.mul(poolInfo[_pid].accWkdPerShare).div(
+        uint256 accWkd = boostedAmount.mul(poolInfo[_pid].accWkdPerShare).div(
             ACC_WKD_PRECISION
         );
-        uint256 pending = accCake.sub(user.rewardDebt);
+        uint256 pending = accWkd.sub(user.rewardDebt);
         // SafeTransfer WKD
         _safeTransfer(_user, pending);
     }
