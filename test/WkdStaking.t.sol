@@ -4,7 +4,7 @@ pragma solidity ^0.6.0;
 import "forge-std/Test.sol";
 import "../src/Stake/WkdStake.sol";
 import "../src/helpers/SafeBEP20.sol";
-import "../src/Stake/WkdMock.sol";
+import "../src/helpers/MockWKD.sol";
 
 contract WkdPoolTest is Test {
     WkdPool wkp;
@@ -23,6 +23,7 @@ contract WkdPoolTest is Test {
             address(treasury),
             address(operator)
         );
+
         
     }
 
@@ -32,7 +33,9 @@ contract WkdPoolTest is Test {
         mWakanda.balanceOf(user);
         mWakanda.approve(address(wkp), 1 ether);
         wkp.deposit(0.00002 ether, 2 weeks);
-       
+        vm.warp(block.timestamp + 2 weeks + 1 seconds);
+        // vm.withdraw()
+        wkp.withdrawAll();
         vm.stopPrank();  
 }
 

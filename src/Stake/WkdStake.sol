@@ -20,7 +20,7 @@ contract WkdPool is Ownable, Pausable {
         uint256 lockedAmount; // amount deposited during lock period.
     }
 
-    IBEP20 public immutable token; // wkd token.
+    IBEP20 public immutable wakanda; // wkd token.
 
     mapping(address => UserInfo) public userInfo;
     mapping(address => bool) public freePerformanceFeeUsers; // free performance fee users.
@@ -32,6 +32,24 @@ contract WkdPool is Ownable, Pausable {
     address public treasury;
     address public operator;
     uint256 public totalLockedAmount; // total lock amount.
+
+    uint256 public rewardPerBlock;
+    uint256 public accWkdPer;
+    uint256 public constant WKD_SHARED_PER_BLOCK = 154320 * 1e9;
+    // Accrued token per share
+    uint256 public accTokenPerShare;
+     // The block number of the last pool update
+    uint256 public lastRewardBlock;
+
+
+
+
+
+
+
+
+
+
 
     uint256 public constant MAX_PERFORMANCE_FEE = 2000; // 20%
     uint256 public constant MAX_WITHDRAW_FEE = 500; // 5%
@@ -108,7 +126,7 @@ contract WkdPool is Ownable, Pausable {
         address _operator
     ) public {
         require(address(_token) != address(0));
-        token = _token;
+        wakanda = _token;
         admin = _admin;
         treasury = _treasury;
         operator = _operator;
@@ -163,7 +181,7 @@ contract WkdPool is Ownable, Pausable {
                         DURATION_FACTOR_OVERDUE;
                     uint256 currentOverdueFee = (earnAmount * overdueWeight) /
                         PRECISION_FACTOR;
-                    token.safeTransfer(treasury, currentOverdueFee);
+                    wakanda.safeTransfer(treasury, currentOverdueFee);
                     currentAmount -= currentOverdueFee;
                 }
                 // Recalculate the user's share.
@@ -199,7 +217,7 @@ contract WkdPool is Ownable, Pausable {
                 }
                 uint256 currentPerformanceFee = (earnAmount * feeRate) / 10000;
                 if (currentPerformanceFee > 0) {
-                    token.safeTransfer(treasury, currentPerformanceFee);
+                    wakanda.safeTransfer(treasury, currentPerformanceFee);
                     totalAmount -= currentPerformanceFee;
                 }
                 // Recalculate the user's share.
@@ -291,7 +309,7 @@ contract WkdPool is Ownable, Pausable {
         // Handle stock funds.
         if (totalShares == 0) {
             uint256 stockAmount = available();
-            token.safeTransfer(treasury, stockAmount);
+            wakanda.safeTransfer(treasury, stockAmount);
         }
         // Update user share.
         updateUserShare(_user);
@@ -312,7 +330,7 @@ contract WkdPool is Ownable, Pausable {
         uint256 userCurrentLockedBalance;
         uint256 pool = balanceOf();
         if (_amount > 0) {
-            token.safeTransferFrom(_user, address(this), _amount);
+            wakanda.safeTransferFrom(_user, address(this), _amount);
             currentAmount = _amount;
         }
 
@@ -338,6 +356,7 @@ contract WkdPool is Ownable, Pausable {
         }
 
         if (user.lockEndTime > user.lockStartTime) {
+            user.shares += currentShares;
             // Update lock amount.
             user.lockedAmount += _amount;
             totalLockedAmount += _amount;
@@ -381,6 +400,13 @@ contract WkdPool is Ownable, Pausable {
         );
         withdrawOperation(0, _amount);
     }
+
+    // boost calcualtion
+    // function calculateBoost() internal view returns (uint256) {
+    //     userInfo storage user = userInfo[msg.sender];
+    //      uint256 poolB = balanceOf();
+        
+    // }
 
     /**
      * @notice Withdraw funds from the wkd Pool.
@@ -434,11 +460,11 @@ contract WkdPool is Ownable, Pausable {
                 feeRate = withdrawFeeContract;
             }
             uint256 currentWithdrawFee = (currentAmount * feeRate) / 10000;
-            token.safeTransfer(treasury, currentWithdrawFee);
+            wakanda.safeTransfer(treasury, currentWithdrawFee);
             currentAmount -= currentWithdrawFee;
         }
 
-        token.safeTransfer(msg.sender, currentAmount);
+        wakanda.safeTransfer(msg.sender, currentAmount);
 
         if (user.shares > 0) {
             user.wkdAtLastUserAction =
@@ -673,7 +699,7 @@ contract WkdPool is Ownable, Pausable {
      */
     function inCaseTokensGetStuck(address _token) external onlyAdmin {
         require(
-            _token != address(token),
+            _token != address(wakanda),
             "Token cannot be same as deposit token"
         );
 
@@ -821,14 +847,56 @@ contract WkdPool is Ownable, Pausable {
      * @dev The contract puts 100% of the tokens to work.
      */
     function available() public view returns (uint256) {
-        return token.balanceOf(address(this));
+        return wakanda.balanceOf(address(this));
     }
 
     /**
      * @notice Calculates the total underlying tokens
      */
     function balanceOf() public view returns (uint256) {
-        return token.balanceOf(address(this));
+        return wakanda.balanceOf(address(this));
+    }
+
+/*
+     * @notice Update reward variables of the given pool to be up-to-date.
+     */
+    function _updatePool() internal {
+        if (block.number <= lastRewardBlock) {
+            return;
+        }
+
+        uint256 stakedTokenSupply = wakanda.balanceOf(address(this));
+
+        if (stakedTokenSupply == 0) {
+            lastRewardBlock = block.number;
+            return;
+        }
+
+        uint256 multiplier = _getMultiplier(lastRewardBlock, block.number);
+        uint256 wakandaReward = multiplier.mul(rewardPerBlock);
+        accTokenPerShare = accTokenPerShare.add(
+            wakandaReward.mul(PRECISION_FACTOR).div(stakedTokenSupply)
+        );
+        lastRewardBlock = block.number;
+    }
+
+    /*
+     * @notice Return reward multiplier over the given _from to _to block.
+     * @param _from: block to start
+     * @param _to: block to finish
+     */
+    function _getMultiplier(uint256 _from, uint256 _to)
+        internal
+        view
+        returns (uint256)
+    {
+        if (_to <= bonusEndBlock) {
+            return _to.sub(_from);
+        } else if (_from >= bonusEndBlock) {
+            return 0;
+        } else {
+            return bonusEndBlock.sub(_from);
+        }
     }
 
     /**
