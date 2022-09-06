@@ -16,6 +16,7 @@ contract WkdPool is Ownable, Pausable {
         uint256 lastUserActionTime; // keep track of the last user action time.
         uint256 lockStartTime; // lock start time.
         uint256 lockEndTime; // lock end time.
+        uint256 userBoostedShare; // boost share, in order to give the user higher reward. The user only enjoys the reward, so the principal needs to be recorded as a debt.
         bool locked; //lock status.
         uint256 lockedAmount; // amount deposited during lock period.
     }
@@ -31,6 +32,7 @@ contract WkdPool is Ownable, Pausable {
     address public admin;
     address public treasury;
     address public operator;
+    uint256 public totalBoostDebt; // total boost debt.
     uint256 public totalLockedAmount; // total lock amount.
 
     uint256 public rewardPerBlock;
@@ -38,8 +40,7 @@ contract WkdPool is Ownable, Pausable {
     uint256 public constant WKD_SHARED_PER_BLOCK = 154320 * 1e9;
     // Accrued token per share
     uint256 public accTokenPerShare;
-     // The block number of the last pool update
-    uint256 public lastRewardBlock;
+    
 
 
 
@@ -57,6 +58,7 @@ contract WkdPool is Ownable, Pausable {
     uint256 public constant MAX_WITHDRAW_FEE_PERIOD = 1 weeks; // 1 week
     uint256 public constant MIN_LOCK_DURATION = 1 weeks; // 1 week
     uint256 public constant MAX_LOCK_DURATION_LIMIT = 1000 days; // 1000 days
+     uint256 public constant BOOST_WEIGHT_LIMIT = 5000 * 1e10; // 5000%
     uint256 public constant PRECISION_FACTOR = 1e12; // precision factor.
     uint256 public constant PRECISION_FACTOR_SHARE = 1e28; // precision factor for share.
     uint256 public constant MIN_DEPOSIT_AMOUNT = 0.00001 ether;
@@ -65,6 +67,7 @@ contract WkdPool is Ownable, Pausable {
     uint256 public MAX_LOCK_DURATION = 365 days; // 365 days
     uint256 public DURATION_FACTOR = 365 days;
     uint256 public DURATION_FACTOR_OVERDUE = 180 days; // 180 days, in order to calculate overdue fee.
+    uint256 public BOOST_WEIGHT = 100 * 1e10; // 100%
 
     uint256 public performanceFee = 200; // 2%
     uint256 public performanceFeeContract = 200; // 2%
@@ -100,7 +103,7 @@ contract WkdPool is Ownable, Pausable {
     event NewAdmin(address admin);
     event NewTreasury(address treasury);
     event NewOperator(address operator);
-    event FreeFeeUser(address indexed user, bool indexed free);
+     event FreeFeeUser(address indexed user, bool indexed free);
     event NewPerformanceFee(uint256 performanceFee);
     event NewPerformanceFeeContract(uint256 performanceFeeContract);
     event NewWithdrawFee(uint256 withdrawFee);
@@ -111,6 +114,7 @@ contract WkdPool is Ownable, Pausable {
     event NewDurationFactor(uint256 durationFactor);
     event NewDurationFactorOverdue(uint256 durationFactorOverdue);
     event NewUnlockFreeDuration(uint256 unlockFreeDuration);
+    event NewBoostWeight(uint256 boostWeight);
 
     /**
      * @notice Constructor
@@ -161,7 +165,9 @@ contract WkdPool is Ownable, Pausable {
             if (user.locked) {
                 // Calculate the user's current token amount and update related parameters.
                 uint256 currentAmount = (balanceOf() * (user.shares)) /
-                    totalShares;
+                    totalShares - user.userBoostedShare;
+                 totalBoostDebt -= user.userBoostedShare;
+                 user.userBoostedShare = 0;
                 totalShares -= user.shares;
                 //Charge a overdue fee after the free duration has expired.
                 if (
@@ -353,10 +359,21 @@ contract WkdPool is Ownable, Pausable {
                 (pool - userCurrentLockedBalance);
         } else {
             currentShares = currentAmount;
-        }
+        } 
 
         if (user.lockEndTime > user.lockStartTime) {
             user.shares += currentShares;
+            // Calculate boost share.
+            uint256 boostWeight = ((user.lockEndTime - user.lockStartTime) * BOOST_WEIGHT) / DURATION_FACTOR;
+            uint256 boostShares = (boostWeight * currentShares) / PRECISION_FACTOR;
+            currentShares += boostShares;
+            user.shares += currentShares;
+
+            // Calculate boost share , the user only enjoys the reward, so the principal needs to be recorded as a debt.
+            uint256 userBoostedShare = (boostWeight * currentAmount) / PRECISION_FACTOR;
+            user.userBoostedShare += userBoostedShare;
+            totalBoostDebt += userBoostedShare;
+
             // Update lock amount.
             user.lockedAmount += _amount;
             totalLockedAmount += _amount;
@@ -377,7 +394,7 @@ contract WkdPool is Ownable, Pausable {
         }
         totalShares += currentShares;
 
-        user.wkdAtLastUserAction = (user.shares * balanceOf()) / totalShares;
+        user.wkdAtLastUserAction = (user.shares * balanceOf()) / totalShares - user.userBoostedShare;
         user.lastUserActionTime = block.timestamp;
 
         emit Deposit(
@@ -401,12 +418,6 @@ contract WkdPool is Ownable, Pausable {
         withdrawOperation(0, _amount);
     }
 
-    // boost calcualtion
-    // function calculateBoost() internal view returns (uint256) {
-    //     userInfo storage user = userInfo[msg.sender];
-    //      uint256 poolB = balanceOf();
-        
-    // }
 
     /**
      * @notice Withdraw funds from the wkd Pool.
@@ -857,47 +868,6 @@ contract WkdPool is Ownable, Pausable {
         return wakanda.balanceOf(address(this));
     }
 
-/*
-     * @notice Update reward variables of the given pool to be up-to-date.
-     */
-    function _updatePool() internal {
-        if (block.number <= lastRewardBlock) {
-            return;
-        }
-
-        uint256 stakedTokenSupply = wakanda.balanceOf(address(this));
-
-        if (stakedTokenSupply == 0) {
-            lastRewardBlock = block.number;
-            return;
-        }
-
-        uint256 multiplier = _getMultiplier(lastRewardBlock, block.number);
-        uint256 wakandaReward = multiplier.mul(rewardPerBlock);
-        accTokenPerShare = accTokenPerShare.add(
-            wakandaReward.mul(PRECISION_FACTOR).div(stakedTokenSupply)
-        );
-        lastRewardBlock = block.number;
-    }
-
-    /*
-     * @notice Return reward multiplier over the given _from to _to block.
-     * @param _from: block to start
-     * @param _to: block to finish
-     */
-    function _getMultiplier(uint256 _from, uint256 _to)
-        internal
-        view
-        returns (uint256)
-    {
-        if (_to <= bonusEndBlock) {
-            return _to.sub(_from);
-        } else if (_from >= bonusEndBlock) {
-            return 0;
-        } else {
-            return bonusEndBlock.sub(_from);
-        }
-    }
 
     /**
      * @notice Checks if address is a contract
