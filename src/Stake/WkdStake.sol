@@ -19,6 +19,7 @@ contract WkdPool is Ownable, Pausable {
         uint256 userBoostedShare; // boost share, in order to give the user higher reward. The user only enjoys the reward, so the principal needs to be recorded as a debt.
         bool locked; //lock status.
         uint256 lockedAmount; // amount deposited during lock period.
+        uint256 lastBlockAction;
     }
 
     IBEP20 public immutable wakanda; // wkd token.
@@ -40,6 +41,8 @@ contract WkdPool is Ownable, Pausable {
     uint256 public constant WKD_SHARED_PER_BLOCK = 154320 * 1e9;
     // Accrued token per share
     uint256 public accTokenPerShare;
+    uint256 rewardPerBlcok = 145320988;
+//   uint256 rewardPrecision = 1e6;
     
 
 
@@ -362,16 +365,18 @@ contract WkdPool is Ownable, Pausable {
         } 
 
         if (user.lockEndTime > user.lockStartTime) {
-            user.shares += currentShares;
             // Calculate boost share.
             uint256 boostWeight = ((user.lockEndTime - user.lockStartTime) * BOOST_WEIGHT) / DURATION_FACTOR;
             uint256 boostShares = (boostWeight * currentShares) / PRECISION_FACTOR;
-            currentShares += boostShares;
+            uint256 userReward = calReward(msg.sender);
+            currentShares += userReward;
+
             user.shares += currentShares;
 
             // Calculate boost share , the user only enjoys the reward, so the principal needs to be recorded as a debt.
             uint256 userBoostedShare = (boostWeight * currentAmount) / PRECISION_FACTOR;
-            user.userBoostedShare += userBoostedShare;
+            
+            // user.userBoostedShare += userBoostedShare;
             totalBoostDebt += userBoostedShare;
 
             // Update lock amount.
@@ -472,6 +477,8 @@ contract WkdPool is Ownable, Pausable {
             }
             uint256 currentWithdrawFee = (currentAmount * feeRate) / 10000;
             wakanda.safeTransfer(treasury, currentWithdrawFee);
+            uint rewardD = calReward(msg.sender);
+      currentAmount -= currentWithdrawFee + rewardD.div(1000);
             currentAmount -= currentWithdrawFee;
         }
 
@@ -868,7 +875,19 @@ contract WkdPool is Ownable, Pausable {
         return wakanda.balanceOf(address(this));
     }
 
-
+ function calReward(address _user) internal returns (uint256) {
+    UserInfo storage user = userInfo[_user];
+    uint256 _rewardPerToken;
+    //old user
+    if (user.lastBlockAction != 0) {
+      uint256 blockPassed = block.number - user.lastBlockAction;
+      user.lastBlockAction = block.number;
+      _rewardPerToken = rewardPerBlcok.mul(blockPassed).div(totalShares);
+    } else {
+      user.lastBlockAction = block.number;
+    }
+    return _rewardPerToken;
+  }
     /**
      * @notice Checks if address is a contract
      */

@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: MIT
-
 pragma solidity ^0.6.0;
 pragma experimental ABIEncoderV2;
 
@@ -10,7 +8,6 @@ import "@openzeppelin/utils/ReentrancyGuard.sol";
 
 import "../helpers/IBEP20.sol";
 import "../helpers/SafeBEP20.sol";
-
 contract WakandaPoolInitializable is Ownable, ReentrancyGuard {
     using SafeMath for uint256;
     using SafeBEP20 for IBEP20;
@@ -26,6 +23,7 @@ contract WakandaPoolInitializable is Ownable, ReentrancyGuard {
 
     // Accrued token per share
     uint256 public accTokenPerShare;
+    uint256 stakedByUsers;
 
     // The block number when WKD mining ends.
     uint256 public bonusEndBlock;
@@ -133,6 +131,7 @@ contract WakandaPoolInitializable is Ownable, ReentrancyGuard {
                 "User amount above limit"
             );
         }
+        stakedByUsers += _amount;
 
         _updatePool();
 
@@ -170,6 +169,7 @@ contract WakandaPoolInitializable is Ownable, ReentrancyGuard {
     function withdraw(uint256 _amount) external nonReentrant {
         UserInfo storage user = userInfo[msg.sender];
         require(user.amount >= _amount, "Amount to withdraw too high");
+        stakedByUsers -= _amount;
 
         _updatePool();
 
@@ -323,7 +323,7 @@ contract WakandaPoolInitializable is Ownable, ReentrancyGuard {
      */
     function pendingReward(address _user) external view returns (uint256) {
         UserInfo storage user = userInfo[_user];
-        uint256 stakedTokenSupply = stakedToken.balanceOf(address(this));
+        uint256 stakedTokenSupply = stakedByUsers;
         if (block.number > lastRewardBlock && stakedTokenSupply != 0) {
             uint256 multiplier = _getMultiplier(lastRewardBlock, block.number);
             uint256 wakandaReward = multiplier.mul(rewardPerBlock);
@@ -352,7 +352,7 @@ contract WakandaPoolInitializable is Ownable, ReentrancyGuard {
             return;
         }
 
-        uint256 stakedTokenSupply = stakedToken.balanceOf(address(this));
+        uint256 stakedTokenSupply = stakedByUsers;
 
         if (stakedTokenSupply == 0) {
             lastRewardBlock = block.number;
@@ -385,9 +385,71 @@ contract WakandaPoolInitializable is Ownable, ReentrancyGuard {
             return bonusEndBlock.sub(_from);
         }
     }
-       function viewUserInfo(address _user)public view returns(uint info, uint _amount){
-        info = userInfo[_user].rewardDebt;
-        info = userInfo[_user].amount;
+
+      function viewUserInfo(address _user)public view returns(uint info, uint _amount){
+        UserInfo storage user = userInfo[_user];
+        info = user.rewardDebt;
+        _amount = user.amount;
 
 }
+}
+
+contract GenericStakeFactory is Ownable {
+    event NewGenericPool(address indexed newPool);
+    bool wkdInit;
+
+    constructor() public {
+        //
+    }
+
+    /*
+     * @notice Deploy the pool
+     * @param _stakedToken: staked token address
+     * @param _rewardToken: reward token address
+     * @param _rewardPerBlock: reward per block (in rewardToken)
+     * @param _startBlock: start block
+     * @param _endBlock: end block
+     * @param _poolLimitPerUser: pool limit per user in stakedToken (if any, else 0)
+     * @param _admin: admin address with ownership
+     * @return address of new smart chef contract
+     */
+    function deployPool(
+        IBEP20 _stakedToken,
+        IBEP20 _rewardToken,
+        uint256 _rewardPerBlock,
+        uint256 _startBlock,
+        uint256 _bonusEndBlock,
+        uint256 _poolLimitPerUser,
+        address _admin
+    ) external onlyOwner returns (address) {
+        require(_stakedToken.totalSupply() >= 0);
+        require(_rewardToken.totalSupply() >= 0);
+        if (_stakedToken == _rewardToken) {
+            assert(!wkdInit);
+            wkdInit = true;
+        }
+        bytes memory bytecode = type(WakandaPoolInitializable).creationCode;
+        bytes32 salt = keccak256(
+            abi.encodePacked(_stakedToken, _rewardToken, _startBlock)
+        );
+        address genericStake;
+
+        assembly {
+            genericStake := create2(0, add(bytecode, 32), mload(bytecode), salt)
+        }
+
+        WakandaPoolInitializable(genericStake).initialize(
+            _stakedToken,
+            _rewardToken,
+            _rewardPerBlock,
+            _startBlock,
+            _bonusEndBlock,
+            _poolLimitPerUser,
+            _admin
+        );
+
+        emit NewGenericPool(genericStake);
+        return genericStake;
+    }
+  
 }
