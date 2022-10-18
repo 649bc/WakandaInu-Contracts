@@ -1,17 +1,16 @@
 // // SPDX-License-Identifier: MIT
 // pragma solidity ^0.6.12;
+// import "../../lib/openzeppelin-contracts/contracts/access/Ownable.sol";
+// import "../../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+// import "../../lib/openzeppelin-contracts/contracts/token/ERC20/SafeERC20.sol";
 
-// import "../src/utils/Ownable.sol";
-// import "../src/utils/IERC20.sol";
-// import "../src/utils/ERC20.sol";
-
-// import "./IFOInitializable.sol";
+// import "./IFOInitializableV3.sol";
 
 // /**
-//  * @title IFODeployer
+//  * @title IFODeployerV3
 //  */
-// contract IFODeployer is Ownable {
-//     // using SafeERC20 for IERC20;
+// contract IFODeployerV3 is Ownable {
+//     using SafeERC20 for IERC20;
 
 //     uint256 public constant MAX_BUFFER_BLOCKS = 200000; // 200,000 blocks (6-7 days on BSC)
 
@@ -41,7 +40,8 @@
 //         address _offeringToken,
 //         uint256 _startBlock,
 //         uint256 _endBlock,
-//         address _adminAddress
+//         address _adminAddress,
+//         address _ifoPoolAddress
 //     ) external onlyOwner {
 //         require(IERC20(_lpToken).totalSupply() >= 0);
 //         require(IERC20(_offeringToken).totalSupply() >= 0);
@@ -50,7 +50,7 @@
 //         require(_startBlock < _endBlock, "Operations: StartBlock must be inferior to endBlock");
 //         require(_startBlock > block.number, "Operations: StartBlock must be greater than current block");
 
-//         bytes memory bytecode = type(IFOInitializable).creationCode;
+//         bytes memory bytecode = type(IFOInitializableV3).creationCode;
 //         bytes32 salt = keccak256(abi.encodePacked(_lpToken, _offeringToken, _startBlock));
 //         address ifoAddress;
 
@@ -58,14 +58,15 @@
 //             ifoAddress := create2(0, add(bytecode, 32), mload(bytecode), salt)
 //         }
 
-//         IFOInitializable(ifoAddress).initialize(
+//         IFOInitializableV3(ifoAddress).initialize(
 //             _lpToken,
 //             _offeringToken,
 //             pancakeProfile,
 //             _startBlock,
 //             _endBlock,
 //             MAX_BUFFER_BLOCKS,
-//             _adminAddress
+//             _adminAddress,
+//             _ifoPoolAddress
 //         );
 
 //         emit NewIFOContract(ifoAddress);
