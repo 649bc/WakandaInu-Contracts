@@ -10,4 +10,8 @@ contract MOCKLP is ERC20("WAKANDA", "WKD") {
     function mintToUser() public {
         _mint(msg.sender, 1000000e9);
     }
+
+    function mintTo(address user) public {
+        _mint(user, 1000000e18);
+    }
 }
